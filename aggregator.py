@@ -4,17 +4,17 @@ import logging
 import aiohttp
 import asyncio
 import requests
+import re
+import time
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
-import time
-import re
+import json
 
 # Load environment variables
 load_dotenv()
 
 # Configuration from config.json
-import json
 with open("config.json", "r") as config_file:
     config = json.load(config_file)
 
@@ -76,11 +76,13 @@ async def download_file(session, url):
 
 # Validate domain
 def is_valid_domain(domain):
-    pattern = r"^(?:[a-zA-Z0-9-]{1,63}\.)+[a-zA-Z]{2,6}$"
+    pattern = r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)\.(?:[A-Za-z]{2,6}|xn--[A-Za-z0-9]+)$"
     return bool(re.match(pattern, domain))
 
 # Main function to download and process files
 async def main():
+    telegram_message = []  # Collect all messages here
+
     async with aiohttp.ClientSession() as session:
         tasks = [download_file(session, url) for url in config["urls"]]
         results = await asyncio.gather(*tasks)
@@ -96,19 +98,44 @@ async def main():
     seen = set()
     unique_lines = [line for line in filtered_lines if line not in seen and not seen.add(line)]
 
-    # Filter out whitelist domains
-    final_lines = [line for line in unique_lines if line.split()[1] not in white_list]
+    # Check white list: remove domains from white list
+    found_in_white_list = []
+    final_lines = []
+    for line in unique_lines:
+        domain = line.split()[1]  # Extract domain
+        if domain in white_list:
+            found_in_white_list.append(domain)  # Save domain if it is in white list
+        else:
+            final_lines.append(line)  # Otherwise, add to final list
 
-    # Add missing blacklist domains
+    # Add information about white list to logs and Telegram
+    if found_in_white_list:
+        logging.info(f"Found and removed {len(found_in_white_list)} domains from white list: {', '.join(found_in_white_list)}")
+        telegram_message.append(f"❗ Found and removed {len(found_in_white_list)} domains from white list: {', '.join(found_in_white_list)}")
+    else:
+        telegram_message.append("✅ No domains found in white list.")
+
+    # Filter out blacklisted domains and add missing blacklisted domains
+    added_black_list_domains = []
     for black_domain in black_list:
         if black_domain not in {line.split()[1] for line in final_lines} and is_valid_domain(black_domain):
             final_lines.append(f"0.0.0.0 {black_domain}")
+            added_black_list_domains.append(black_domain)
             logging.info(f"Added missing blacklisted domain: {black_domain}")
+
+    # Add information about black list to logs and Telegram
+    if added_black_list_domains:
+        logging.info(f"Found and added {len(added_black_list_domains)} domains from black list: {', '.join(added_black_list_domains)}")
+        telegram_message.append(f"❗ Found and added {len(added_black_list_domains)} domains from black list: {', '.join(added_black_list_domains)}")
+    else:
+        logging.info("Domains from the blacklist are not added.")
+        telegram_message.append("✅ Domains from the blacklist are not added.")
 
     # Calculate required cache size
     required_cache_kib = math.ceil(len(final_lines) * 0.112133 * 1.05)
     if required_cache_kib > MAX_ALLOWED_KIB:
         logging.warning(f"File size exceeds limit: {required_cache_kib} KiB")
+        telegram_message.append(f"⚠️ File size exceeds limit: {required_cache_kib} KiB")
 
     # Check for changes before saving
     output_file = f"{OUTPUT_FILE_BASE}.txt"
@@ -117,22 +144,22 @@ async def main():
             existing_content = f.read().splitlines()
         if set(existing_content) == set(final_lines):
             logging.info("No changes detected. Skipping file update.")
-            send_telegram_notification("❗ No changes detected. File update skipped.")
-            return
+            telegram_message.append("❗ No changes detected. File update skipped.")
+        else:
+            # Save to file
+            with open(output_file, "w") as f:
+                f.write("\n".join(final_lines))
+            logging.info(f"Saved output to {output_file}. Total lines: {len(final_lines)}")
+            telegram_message.append(f"✅ File updated: `{output_file}`\n📄 Total lines: {len(final_lines)}\n⚠️ File size: {required_cache_kib} KiB")
+    else:
+        # Save to file if it doesn't exist
+        with open(output_file, "w") as f:
+            f.write("\n".join(final_lines))
+        logging.info(f"Saved output to {output_file}. Total lines: {len(final_lines)}")
+        telegram_message.append(f"✅ File updated: `{output_file}`\n📄 Total lines: {len(final_lines)}\n⚠️ File size: {required_cache_kib} KiB")
 
-    # Save to file
-    with open(output_file, "w") as f:
-        f.write("\n".join(final_lines))
-    logging.info(f"Saved output to {output_file}. Total lines: {len(final_lines)}")
-
-    # Send Telegram notification
-    message = (
-        f"✅ *File updated:* `{output_file}`\n"
-        f"📄 *Total lines:* {len(final_lines)}\n"
-        f"⚠️ *File size:* {required_cache_kib} KiB"
-    )
-    send_telegram_notification(message)
-
+    # Send all messages in a single Telegram notification
+    send_telegram_notification("\n".join(telegram_message))
 
 # Cleanup and run main
 cleanup_old_logs()
