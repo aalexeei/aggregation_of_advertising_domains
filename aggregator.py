@@ -30,6 +30,7 @@ def cleanup_old_logs():
 # Call cleanup function at the beginning
 cleanup_old_logs()
 
+
 # List of URLs to download files
 urls = [
     "https://raw.githubusercontent.com/braveinnovators/ukrainian-security-filter/main/lists/domains.txt",  # https://github.com/braveinnovators/ukrainian-security-filter
