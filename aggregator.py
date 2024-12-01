@@ -1,122 +1,138 @@
-import requests
+import os
 import math
 import logging
-import os
+import aiohttp
+import asyncio
+import requests
+from datetime import datetime
+from pathlib import Path
+from dotenv import load_dotenv
 import time
-from datetime import datetime, timedelta
+import re
 
-# Constants for log file management
-LOG_DIR = "logs"
-MAX_LOG_AGE_DAYS = 7  # Maximum log file age in days
+# Load environment variables
+load_dotenv()
 
-# Create log directory if it doesn't exist
+# Configuration from config.json
+import json
+with open("config.json", "r") as config_file:
+    config = json.load(config_file)
+
+LOG_DIR = config["log_dir"]
+MAX_LOG_AGE_DAYS = config["max_log_age_days"]
+OUTPUT_FILE_BASE = config["output_file_base"]
+WHITE_LIST_FILE = config["white_list_file"]
+BLACK_LIST_FILE = config["black_list_file"]
+MAX_ALLOWED_KIB = config["max_allowed_kib"]
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# Set up logging
 os.makedirs(LOG_DIR, exist_ok=True)
-
-# Set up the logger
 log_filename = f"{LOG_DIR}/log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
 logging.basicConfig(filename=log_filename, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# Function to send Telegram notifications
+def send_telegram_notification(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, data=data)
+        logging.info("Telegram notification sent.")
+    except requests.RequestException as e:
+        logging.error(f"Failed to send Telegram notification: {e}")
 
 # Function to clean up old logs
 def cleanup_old_logs():
     current_time = time.time()
     for filename in os.listdir(LOG_DIR):
         file_path = os.path.join(LOG_DIR, filename)
-        if os.path.isfile(file_path):
-            file_age = current_time - os.path.getmtime(file_path)
-            if file_age > MAX_LOG_AGE_DAYS * 86400:  # 86400 seconds in a day
-                os.remove(file_path)
-                logging.info(f"Deleted old log file: {filename}")
+        if os.path.isfile(file_path) and (current_time - os.path.getmtime(file_path)) > MAX_LOG_AGE_DAYS * 86400:
+            os.remove(file_path)
+            logging.info(f"Deleted old log file: {filename}")
 
-# Call cleanup function at the beginning
-cleanup_old_logs()
+# Load whitelist and blacklist
+def load_list(file_path):
+    if not os.path.exists(file_path):
+        Path(file_path).touch()  # Create empty file if it doesn't exist
+    with open(file_path, "r") as f:
+        return {line.strip() for line in f if line.strip()}
 
-# List of URLs to download files
-urls = [
-    "https://raw.githubusercontent.com/braveinnovators/ukrainian-security-filter/main/lists/domains.txt",  # https://github.com/braveinnovators/ukrainian-security-filter
-    "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling/hosts", #https://github.com/StevenBlack/hosts
-    "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/multi.txt" #https://github.com/hagezi/dns-blocklists
-]
+white_list = load_list(WHITE_LIST_FILE)
+black_list = load_list(BLACK_LIST_FILE)
 
-# Base name of the output file
-output_file_base = "aggregated_list"
-
-# Constants
-KIB_PER_STRING = 39998 /356701  # Approx. 0.112133 KiB per string
-BUFFER_FACTOR = 1.05  # 5% buffer to ensure enough space
-MAX_ALLOWED_KIB = 50000  # Maximum allowed size in KiB
-
-# Function to download file content from a URL
-def download_file(url):
+# Async function to download file
+async def download_file(session, url):
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        lines = response.text.splitlines()
-        logging.info(f"File downloaded successfully from {url}. Total lines: {len(lines)}")
-        return lines
-    except requests.RequestException as e:
+        async with session.get(url) as response:
+            response.raise_for_status()
+            text = await response.text()
+            lines = text.splitlines()
+            logging.info(f"Downloaded {len(lines)} lines from {url}")
+            return lines
+    except Exception as e:
         logging.error(f"Error downloading {url}: {e}")
         return []
 
-# Download all files and count lines
-all_lines = []
-total_lines_before_filter = 0
+# Validate domain
+def is_valid_domain(domain):
+    pattern = r"^(?:[a-zA-Z0-9-]{1,63}\.)+[a-zA-Z]{2,6}$"
+    return bool(re.match(pattern, domain))
 
-for url in urls:
-    logging.info(f"Downloading: {url}")
-    file_lines = download_file(url)
-    if file_lines:
-        all_lines.extend(file_lines)
-        total_lines_before_filter += len(file_lines)
+# Main function to download and process files
+async def main():
+    async with aiohttp.ClientSession() as session:
+        tasks = [download_file(session, url) for url in config["urls"]]
+        results = await asyncio.gather(*tasks)
 
-# Filter lines: remove empty lines and those starting with '#', add "0.0.0.0" prefix where necessary
-filtered_lines = []
-for line in all_lines:
-    stripped_line = line.strip()
-    if not stripped_line or stripped_line.startswith("#"):
-        continue  # Skip empty lines and comments
-    if stripped_line.startswith("0.0.0.0"):
-        filtered_lines.append(stripped_line)  # Add the line as is if it's already in the correct format
-    else:
-        filtered_lines.append(f"0.0.0.0 {stripped_line}")  # Add the "0.0.0.0" prefix for other lines
+    # Combine all lines from downloaded files
+    all_lines = [line for sublist in results for line in sublist]
+    filtered_lines = [
+        f"0.0.0.0 {line.strip()}" if not line.startswith("0.0.0.0") else line.strip()
+        for line in all_lines if line.strip() and not line.startswith("#")
+    ]
 
-# Remove duplicates
-seen = set()
-unique_lines = []
-duplicates = []
+    # Remove duplicates
+    seen = set()
+    unique_lines = [line for line in filtered_lines if line not in seen and not seen.add(line)]
 
-for line in filtered_lines:
-    if line in seen:
-        duplicates.append(line)  # Add duplicate to duplicates list
-    else:
-        seen.add(line)
-        unique_lines.append(line)
+    # Filter out whitelist domains
+    final_lines = [line for line in unique_lines if line.split()[1] not in white_list]
 
-# Count total lines and duplicates
-duplicates_count = len(duplicates)
-total_lines_after_filter = len(unique_lines)
+    # Add missing blacklist domains
+    for black_domain in black_list:
+        if black_domain not in {line.split()[1] for line in final_lines} and is_valid_domain(black_domain):
+            final_lines.append(f"0.0.0.0 {black_domain}")
+            logging.info(f"Added missing blacklisted domain: {black_domain}")
 
-if duplicates_count > 0:
-    logging.info(f"Duplicates found and removed: {duplicates_count}")
-else:
-    logging.info("No duplicates found.")
+    # Calculate required cache size
+    required_cache_kib = math.ceil(len(final_lines) * 0.112133 * 1.05)
+    if required_cache_kib > MAX_ALLOWED_KIB:
+        logging.warning(f"File size exceeds limit: {required_cache_kib} KiB")
 
-# Calculate required cache size in KiB with buffer
-required_cache_kib = math.ceil(total_lines_after_filter * KIB_PER_STRING * BUFFER_FACTOR)
+    # Check for changes before saving
+    output_file = f"{OUTPUT_FILE_BASE}.txt"
+    if os.path.exists(output_file):
+        with open(output_file, "r") as f:
+            existing_content = f.read().splitlines()
+        if set(existing_content) == set(final_lines):
+            logging.info("No changes detected. Skipping file update.")
+            send_telegram_notification("❗ No changes detected. File update skipped.")
+            return
 
-# Check if the required size exceeds the maximum allowed size
-if required_cache_kib > MAX_ALLOWED_KIB:
-    logging.warning(f"The file size exceeds {MAX_ALLOWED_KIB} KiB! Actual size: {required_cache_kib} KiB")
-
-# Final file name with cache size appended
-output_file = f"{output_file_base}.txt"
-
-# Save the final output to a file
-try:
+    # Save to file
     with open(output_file, "w") as f:
-        f.write("\n".join(unique_lines))
-    logging.info(f"Processed file saved as: {output_file}")
-    logging.info(f"Total lines before filtering (sum of all files): {total_lines_before_filter}")
-    logging.info(f"Total lines in merged file after filtering and deduplication: {total_lines_after_filter}")
-    logging.info(f"Required cache size (with buffer): {required_cache_kib} KiB")
-except IOError as e:
-    logging.error(f"Error saving the file {output_file}: {e}")
+        f.write("\n".join(final_lines))
+    logging.info(f"Saved output to {output_file}. Total lines: {len(final_lines)}")
+
+    # Send Telegram notification
+    message = (
+        f"✅ *File updated:* `{output_file}`\n"
+        f"📄 *Total lines:* {len(final_lines)}\n"
+        f"⚠️ *File size:* {required_cache_kib} KiB"
+    )
+    send_telegram_notification(message)
+
+# Cleanup and run main
+cleanup_old_logs()
+asyncio.run(main())

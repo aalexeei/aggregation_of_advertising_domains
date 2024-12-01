@@ -1,0 +1,13 @@
+{
+    "log_dir": "logs",
+    "max_log_age_days": 7,
+    "urls": [
+        "https://raw.githubusercontent.com/braveinnovators/ukrainian-security-filter/main/lists/domains.txt",
+        "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling/hosts",
+        "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/multi.txt"
+    ],
+    "white_list_file": "white_list.txt",
+    "black_list_file": "black_list.txt",
+    "output_file_base": "aggregated_list",
+    "max_allowed_kib": 80000
+}
