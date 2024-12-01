@@ -32,6 +32,7 @@ os.makedirs(LOG_DIR, exist_ok=True)
 log_filename = f"{LOG_DIR}/log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"
 logging.basicConfig(filename=log_filename, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+
 # Function to send Telegram notifications
 def send_telegram_notification(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -42,6 +43,7 @@ def send_telegram_notification(message):
     except requests.RequestException as e:
         logging.error(f"Failed to send Telegram notification: {e}")
 
+
 # Function to clean up old logs
 def cleanup_old_logs():
     current_time = time.time()
@@ -51,6 +53,7 @@ def cleanup_old_logs():
             os.remove(file_path)
             logging.info(f"Deleted old log file: {filename}")
 
+
 # Load whitelist and blacklist
 def load_list(file_path):
     if not os.path.exists(file_path):
@@ -58,8 +61,10 @@ def load_list(file_path):
     with open(file_path, "r") as f:
         return {line.strip() for line in f if line.strip()}
 
+
 white_list = load_list(WHITE_LIST_FILE)
 black_list = load_list(BLACK_LIST_FILE)
+
 
 # Async function to download file
 async def download_file(session, url):
@@ -74,10 +79,12 @@ async def download_file(session, url):
         logging.error(f"Error downloading {url}: {e}")
         return []
 
+
 # Validate domain
 def is_valid_domain(domain):
     pattern = r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)\.(?:[A-Za-z]{2,6}|xn--[A-Za-z0-9]+)$"
     return bool(re.match(pattern, domain))
+
 
 # Main function to download and process files
 async def main():
@@ -88,15 +95,27 @@ async def main():
         results = await asyncio.gather(*tasks)
 
     # Combine all lines from downloaded files
-    all_lines = [line for sublist in results for line in sublist]
-    filtered_lines = [
-        f"0.0.0.0 {line.strip()}" if not line.startswith("0.0.0.0") else line.strip()
-        for line in all_lines if line.strip() and not line.startswith("#")
+    all_lines = [line.strip() for sublist in results for line in sublist if line.strip()]
+
+    # Process and filter lines
+    processed_lines = [
+        f"0.0.0.0 {line}" if not line.startswith("0.0.0.0") else line
+        for line in all_lines if not line.startswith("#")
     ]
 
-    # Remove duplicates
+    filtered_lines = [
+        line for line in processed_lines
+        if re.match(r"^0\.0\.0\.0\s+\S+$", line)  # Ensure line has IP and domain
+    ]
+
+    # Remove duplicates and log the number of removed duplicates
     seen = set()
+    initial_count = len(filtered_lines)
     unique_lines = [line for line in filtered_lines if line not in seen and not seen.add(line)]
+    duplicates_removed = initial_count - len(unique_lines)
+
+    logging.info(f"Removed {duplicates_removed} duplicate lines.")
+    telegram_message.append(f"🗑 Removed {duplicates_removed} duplicate lines.")
 
     # Check white list: remove domains from white list
     found_in_white_list = []
@@ -110,8 +129,10 @@ async def main():
 
     # Add information about white list to logs and Telegram
     if found_in_white_list:
-        logging.info(f"Found and removed {len(found_in_white_list)} domains from white list: {', '.join(found_in_white_list)}")
-        telegram_message.append(f"❗ Found and removed {len(found_in_white_list)} domains from white list: {', '.join(found_in_white_list)}")
+        logging.info(
+            f"Found and removed {len(found_in_white_list)} domains from white list: {', '.join(found_in_white_list)}")
+        telegram_message.append(
+            f"❗ Found and removed {len(found_in_white_list)} domains from white list: {', '.join(found_in_white_list)}")
     else:
         telegram_message.append("✅ No domains found in white list.")
 
@@ -125,10 +146,11 @@ async def main():
 
     # Add information about black list to logs and Telegram
     if added_black_list_domains:
-        logging.info(f"Found and added {len(added_black_list_domains)} domains from black list: {', '.join(added_black_list_domains)}")
-        telegram_message.append(f"❗ Found and added {len(added_black_list_domains)} domains from black list: {', '.join(added_black_list_domains)}")
+        logging.info(
+            f"Found and added {len(added_black_list_domains)} domains from black list: {', '.join(added_black_list_domains)}")
+        telegram_message.append(
+            f"❗ Found and added {len(added_black_list_domains)} domains from black list: {', '.join(added_black_list_domains)}")
     else:
-        logging.info("Domains from the blacklist are not added.")
         telegram_message.append("✅ Domains from the blacklist are not added.")
 
     # Calculate required cache size
@@ -146,20 +168,20 @@ async def main():
             logging.info("No changes detected. Skipping file update.")
             telegram_message.append("❗ No changes detected. File update skipped.")
         else:
-            # Save to file
             with open(output_file, "w") as f:
                 f.write("\n".join(final_lines))
             logging.info(f"Saved output to {output_file}. Total lines: {len(final_lines)}")
-            telegram_message.append(f"✅ File updated: `{output_file}`\n📄 Total lines: {len(final_lines)}\n⚠️ File size: {required_cache_kib} KiB")
+            telegram_message.append(
+                f"✅ File updated: `{output_file}`\n📄 Total lines: {len(final_lines)}\n⚠️ File size: {required_cache_kib} KiB")
     else:
-        # Save to file if it doesn't exist
         with open(output_file, "w") as f:
             f.write("\n".join(final_lines))
         logging.info(f"Saved output to {output_file}. Total lines: {len(final_lines)}")
-        telegram_message.append(f"✅ File updated: `{output_file}`\n📄 Total lines: {len(final_lines)}\n⚠️ File size: {required_cache_kib} KiB")
+        telegram_message.append(
+            f"✅ File updated: `{output_file}`\n📄 Total lines: {len(final_lines)}\n⚠️ File size: {required_cache_kib} KiB")
 
-    # Send all messages in a single Telegram notification
     send_telegram_notification("\n".join(telegram_message))
+
 
 # Cleanup and run main
 cleanup_old_logs()

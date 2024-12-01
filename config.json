@@ -10,5 +10,6 @@
     "black_list_file": "black_list.txt",
     "output_file_base": "aggregated_list",
     "max_allowed_kib": 80000
+
 }
 
