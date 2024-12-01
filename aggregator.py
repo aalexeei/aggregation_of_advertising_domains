@@ -12,8 +12,8 @@ from dotenv import load_dotenv
 import json
 
 # Load environment variables
-#load_dotenv()
-load_dotenv("/home/aggregator/aggregation_of_advertising_domains/.env")
+load_dotenv()
+
 
 # Configuration from config.json
 with open("config.json", "r") as config_file:
