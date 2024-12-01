@@ -133,6 +133,7 @@ async def main():
     )
     send_telegram_notification(message)
 
+
 # Cleanup and run main
 cleanup_old_logs()
 asyncio.run(main())
