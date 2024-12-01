@@ -34,7 +34,7 @@ cleanup_old_logs()
 urls = [
     "https://raw.githubusercontent.com/braveinnovators/ukrainian-security-filter/main/lists/domains.txt",  # https://github.com/braveinnovators/ukrainian-security-filter
     "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling/hosts", #https://github.com/StevenBlack/hosts
-    "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/multi.txt"
+    "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/multi.txt" #https://github.com/hagezi/dns-blocklists
 ]
 
 # Base name of the output file
