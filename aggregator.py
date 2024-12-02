@@ -16,7 +16,10 @@ load_dotenv()
 
 
 # Configuration from config.json
-with open("config.json", "r") as config_file:
+base_dir = os.path.dirname(os.path.abspath(__file__))
+config_path = os.path.join(base_dir, "config.json")
+
+with open(config_path, "r") as config_file:
     config = json.load(config_file)
 
 LOG_DIR = config["log_dir"]
