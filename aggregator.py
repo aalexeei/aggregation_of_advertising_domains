@@ -136,7 +136,7 @@ async def main():
         logging.info(
             f"Found and removed {len(found_in_white_list)} domains from white list: {', '.join(found_in_white_list)}")
         telegram_message.append(
-            f"❗ Found and removed {len(found_in_white_list)} domains from white list: {', '.join(found_in_white_list)}")
+            f"❗ Found and removed {len(found_in_white_list)} domains from white list!")
     else:
         telegram_message.append("✅ No domains found in white list.")
 
@@ -153,15 +153,12 @@ async def main():
         logging.info(
             f"Found and added {len(added_black_list_domains)} domains from black list: {', '.join(added_black_list_domains)}")
         telegram_message.append(
-            f"❗ Found and added {len(added_black_list_domains)} domains from black list: {', '.join(added_black_list_domains)}")
+            f"❗ Found and added {len(added_black_list_domains)} domains from black list!")
     else:
         telegram_message.append("✅ Domains from the blacklist are not added.")
 
-    # Calculate required cache size
+    # # Calculate required cache size
     required_cache_kib = math.ceil(len(final_lines) * 0.112133 * 1.05)
-    if required_cache_kib > MAX_ALLOWED_KIB:
-        logging.warning(f"File size exceeds limit: {required_cache_kib} KiB")
-        telegram_message.append(f"⚠️ File size exceeds limit: {required_cache_kib} KiB")
 
     # Check for changes before saving
     output_file = f"{OUTPUT_FILE_BASE}.txt"
@@ -176,13 +173,18 @@ async def main():
                 f.write("\n".join(final_lines))
             logging.info(f"Saved output to {output_file}. Total lines: {len(final_lines)}")
             telegram_message.append(
-                f"✅ File updated: `{output_file}`\n📄 Total lines: {len(final_lines)}\n⚠️ File size: {required_cache_kib} KiB")
+                f"✅ File updated: `{output_file}`\n📄 Total lines: {len(final_lines)}\n⚠️ RAM required: {required_cache_kib} KiB")
     else:
         with open(output_file, "w") as f:
             f.write("\n".join(final_lines))
         logging.info(f"Saved output to {output_file}. Total lines: {len(final_lines)}")
         telegram_message.append(
-            f"✅ File updated: `{output_file}`\n📄 Total lines: {len(final_lines)}\n⚠️ File size: {required_cache_kib} KiB")
+            f"✅ File updated: `{output_file}`\n📄 Total lines: {len(final_lines)}\n⚠️ RAM required: {required_cache_kib} KiB")
+        # Calculate required cache size
+
+    if required_cache_kib > MAX_ALLOWED_KIB:
+        logging.warning(f"File size exceeds limit: {required_cache_kib} KiB")
+        telegram_message.append(f"❗❗ RAM exceeds limit: {required_cache_kib} KiB")
 
     send_telegram_notification("\n".join(telegram_message))
 
