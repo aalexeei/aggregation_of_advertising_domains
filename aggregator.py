@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 import json
+import hashlib
 
 # Install the working directory into the script folder
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
@@ -86,8 +87,13 @@ async def download_file(session, url):
 
 # Validate domain
 def is_valid_domain(domain):
-    pattern = r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)\.(?:[A-Za-z]{2,6}|xn--[A-Za-z0-9]+)$"
+    pattern = r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63})*\.[A-Za-z]{2,}$"
     return bool(re.match(pattern, domain))
+
+
+# Calculate hash for list of lines
+def calculate_hash(lines):
+    return hashlib.md5("\n".join(lines).encode()).hexdigest()
 
 
 # Main function to download and process files
@@ -112,60 +118,48 @@ async def main():
         if re.match(r"^0\.0\.0\.0\s+\S+$", line)  # Ensure line has IP and domain
     ]
 
-    # Remove duplicates and log the number of removed duplicates
+    # Remove duplicates in one pass
     seen = set()
-    initial_count = len(filtered_lines)
     unique_lines = [line for line in filtered_lines if line not in seen and not seen.add(line)]
-    duplicates_removed = initial_count - len(unique_lines)
 
-    logging.info(f"Removed {duplicates_removed} duplicate lines.")
-    telegram_message.append(f"🗑 Removed {duplicates_removed} duplicate lines.")
+    logging.info(f"Removed {len(filtered_lines) - len(unique_lines)} duplicate lines.")
+    telegram_message.append(f"🗑 Removed {len(filtered_lines) - len(unique_lines)} duplicate lines.")
 
-    # Check white list: remove domains from white list
-    found_in_white_list = []
-    final_lines = []
-    for line in unique_lines:
-        domain = line.split()[1]  # Extract domain
-        if domain in white_list:
-            found_in_white_list.append(domain)  # Save domain if it is in white list
-        else:
-            final_lines.append(line)  # Otherwise, add to final list
+    # Remove domains from white list
+    final_lines = [line for line in unique_lines if line.split()[1] not in white_list]
+    found_in_white_list = len(unique_lines) - len(final_lines)
 
-    # Add information about white list to logs and Telegram
     if found_in_white_list:
-        logging.info(
-            f"Found and removed {len(found_in_white_list)} domains from white list: {', '.join(found_in_white_list)}")
-        telegram_message.append(
-            f"❗ Found and removed {len(found_in_white_list)} domains from white list!")
+        logging.info(f"Removed {found_in_white_list} domains from white list.")
+        telegram_message.append(f"❗ Removed {found_in_white_list} domains from white list!")
     else:
         telegram_message.append("✅ No domains found in white list.")
 
-    # Filter out blacklisted domains and add missing blacklisted domains
-    added_black_list_domains = []
-    for black_domain in black_list:
-        if black_domain not in {line.split()[1] for line in final_lines} and is_valid_domain(black_domain):
-            final_lines.append(f"0.0.0.0 {black_domain}")
-            added_black_list_domains.append(black_domain)
-            logging.info(f"Added missing blacklisted domain: {black_domain}")
+    # Add missing blacklisted domains
+    final_domains = {line.split()[1] for line in final_lines}
+    added_black_list_domains = [
+        black_domain for black_domain in black_list
+        if black_domain not in final_domains and is_valid_domain(black_domain)
+    ]
+    final_lines.extend([f"0.0.0.0 {domain}" for domain in added_black_list_domains])
 
-    # Add information about black list to logs and Telegram
     if added_black_list_domains:
-        logging.info(
-            f"Found and added {len(added_black_list_domains)} domains from black list: {', '.join(added_black_list_domains)}")
-        telegram_message.append(
-            f"❗ Found and added {len(added_black_list_domains)} domains from black list!")
+        logging.info(f"Added {len(added_black_list_domains)} domains from black list")
+        telegram_message.append(f"❗ Added {len(added_black_list_domains)} domains from black list!")
     else:
-        telegram_message.append("✅ Domains from the blacklist are not added.")
+        telegram_message.append("✅ No domains from the blacklist were added.")
 
-    # # Calculate required cache size
+    # Calculate required cache size
     required_cache_kib = math.ceil(len(final_lines) * 0.112133 * 1.05)
 
-    # Check for changes before saving
+    # Check for changes and save to file
     output_file = f"{OUTPUT_FILE_BASE}.txt"
     if os.path.exists(output_file):
         with open(output_file, "r") as f:
-            existing_content = f.read().splitlines()
-        if set(existing_content) == set(final_lines):
+            existing_hash = calculate_hash(f.read().splitlines())
+
+        new_hash = calculate_hash(final_lines)
+        if existing_hash == new_hash:
             logging.info("No changes detected. Skipping file update.")
             telegram_message.append("❗ No changes detected. File update skipped.")
         else:
@@ -180,7 +174,6 @@ async def main():
         logging.info(f"Saved output to {output_file}. Total lines: {len(final_lines)}")
         telegram_message.append(
             f"✅ File updated: `{output_file}`\n📄 Total lines: {len(final_lines)}\n⚠️ RAM required: {required_cache_kib} KiB")
-        # Calculate required cache size
 
     if required_cache_kib > MAX_ALLOWED_KIB:
         logging.warning(f"File size exceeds limit: {required_cache_kib} KiB")
