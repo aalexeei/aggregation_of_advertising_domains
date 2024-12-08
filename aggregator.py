@@ -181,7 +181,6 @@ async def main():
 
     send_telegram_notification("\n".join(telegram_message))
 
-
 # Cleanup and run main
 cleanup_old_logs()
 asyncio.run(main())
