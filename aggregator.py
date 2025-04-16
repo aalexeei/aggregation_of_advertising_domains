@@ -64,7 +64,8 @@ def load_list(file_path):
     if not os.path.exists(file_path):
         Path(file_path).touch()  # Create empty file if it doesn't exist
     with open(file_path, "r") as f:
-        return {line.strip() for line in f if line.strip()}
+        return {line.strip().split(' ')[1] if line.startswith('0.0.0.0 ') else line.strip()
+                for line in f if line.strip() and not line.startswith('#')}
 
 
 white_list = load_list(WHITE_LIST_FILE)
@@ -74,7 +75,7 @@ black_list = load_list(BLACK_LIST_FILE)
 # Async function to download file
 async def download_file(session, url):
     try:
-        async with session.get(url) as response:
+        async with session.get(url, ssl=False) as response:
             response.raise_for_status()
             text = await response.text()
             lines = text.splitlines()
