@@ -151,7 +151,7 @@ async def main():
         telegram_message.append("✅ No domains from the blacklist were added.")
 
     # Calculate required cache size
-    required_cache_kib = math.ceil(len(final_lines) * 0.112133 * 1.05)
+    required_cache_kib = math.ceil(len(final_lines) * 75.19 * 1.05 / 1024)
 
     # Check for changes and save to file
     output_file = f"{OUTPUT_FILE_BASE}.txt"
