@@ -4,10 +4,14 @@
 ## Features ✨  
 - **Domain Filtering:**  
   Downloads and processes domain lists from multiple sources.  
+- **Multiple Input Formats:**  
+  Accepts hosts files, plain domain lists and Adblock Plus filter lists in the same config.  
 - **Whitelist/Blacklist Management:**  
   Removes whitelisted domains and adds missing blacklisted ones.  
 - **Duplicate Removal:**  
   Automatically detects and removes duplicate entries.  
+- **Fail-Loud Sources:**  
+  Aborts instead of publishing a partial list when a source dies or changes format.  
 - **Log Cleanup:**  
   Deletes outdated log files based on the configured age.  
 - **Telegram Notifications:**  
@@ -41,12 +45,20 @@
     "white_list_file": "./whitelist.txt",
     "black_list_file": "./blacklist.txt",
     "max_allowed_kib": 100000,
+    "request_timeout_seconds": 60,
+    "abort_on_source_failure": true,
+    "max_shrink_percent": 20,
     "urls": [
       "https://example.com/list1.txt",
       "https://example.com/list2.txt"
     ]
   }
   ```
+  | Key | Meaning |
+  | --- | --- |
+  | `request_timeout_seconds` | Per-source download timeout. |
+  | `abort_on_source_failure` | Leave the output file untouched if any source fails. Set to `false` to publish from whatever downloaded. |
+  | `max_shrink_percent` | Abort if the new list is smaller than the previous one by more than this. |
 ## Usage 🚀
 Run the script with:
   ```bash 
@@ -56,6 +68,15 @@ Run the script with:
 
 ### 1. **Download and Filter**
 - The script downloads domain lists from the URLs specified in `config.json`.
+- Each line is parsed regardless of the source format:
+  - **hosts** — `0.0.0.0 ads.example.com`, `127.0.0.1 ads.example.com`
+  - **plain domains** — `ads.example.com`
+  - **Adblock Plus** — `||ads.example.com^`, `||ads.example.com^$third-party`
+- Rules that have no DNS equivalent are skipped rather than mangled: cosmetic filters
+  (`site.com##.banner`), exceptions (`@@||site.com^`), path and regex rules,
+  TLD wildcards (`||adservice.google.^`), and rules whose modifiers restrict them to a
+  context DNS cannot see (`$script`, `$domain=site.com`) — blocking those at the DNS level
+  would take down the whole domain instead of one request.
 - It filters out duplicates, comments, and unwanted domains.
 
 ### 2. **Whitelist/Blacklist Handling**
@@ -67,8 +88,33 @@ Run the script with:
 - A detailed report is sent via Telegram to notify users of the script’s actions.
 
 ### 4. **Output File**
-- The processed list is saved to `filtered_domains.txt` (or a custom name if configured).
+- The processed list is saved to `aggregated_list.txt` (or a custom name if configured).
 - The script checks if the new content is different from the existing one before overwriting the output file.
+
+### 5. **Choosing Sources — Read Before Adding a URL**
+The output is a **hosts file, which matches domains exactly**. MikroTik `/ip dns adlist`,
+AdAway, NetGuard and DNS66 have no wildcard support: `0.0.0.0 example.com` does **not**
+block `ads.example.com`. (On RouterOS, `match-subdomain=yes` exists only for
+`/ip dns static`, not for adlist.)
+
+Most large blocklists have moved to **base-domain lists for wildcard resolvers** — hagezi
+dropped the hosts format entirely, and oisd never had one. Files named `-onlydomains`,
+`wildcard/`, `domainswild` or `dnsmasq` carry one entry per base domain and state
+`Syntax: Domains (without subdomains)` in their header. Feeding those into a hosts file
+silently loses every subdomain: hagezi's old `hosts/pro.txt` listed `0.as.slashdot.org`,
+its replacement lists only `slashdot.org`.
+
+**So: only add sources that enumerate subdomains** (StevenBlack, 1Hosts, AdAway).
+Base-domain lists are still worth keeping — they block the apex domain — but they cannot
+replace a subdomain-enumerated list, and no source can restore subdomains another
+maintainer stopped publishing.
+
+### 6. **Source Health Checks**
+A blocklist that silently shrinks is worse than one that fails, so the script refuses to
+publish and reports to Telegram when:
+- a source returns an error or times out;
+- a source returns HTTP 200 but yields **zero** usable domains (it changed format);
+- the new list is more than `max_shrink_percent` smaller than the previous one.
 
 ## Example Output 📄
 
