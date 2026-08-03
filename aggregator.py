@@ -231,7 +231,9 @@ async def main():
     else:
         telegram_message.append("✅ No domains from the blacklist were added.")
 
-    # Calculate required cache size
+    # Calculate required cache size. Measured on RouterOS: 1_624_417 adlist entries occupied
+    # 116_439 KiB, i.e. 73.4 bytes each, so this estimate runs ~7% high. Keep the margin -
+    # the coefficient can differ between RouterOS versions and warning early is the safe side.
     required_cache_kib = math.ceil(len(final_lines) * 75.19 * 1.05 / 1024)
 
     # Check for changes and save to file
