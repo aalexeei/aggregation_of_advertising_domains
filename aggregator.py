@@ -75,6 +75,32 @@ white_list = load_list(WHITE_LIST_FILE)
 black_list = load_list(BLACK_LIST_FILE)
 
 
+# A whitelist entry written as ".example.com" covers the zone: the domain itself and every
+# subdomain. Aggressive sources keep inventing new hostnames under one backend (game auth,
+# regional shards), and MikroTik adlist matches exact names only, so without this every new
+# subdomain silently breaks the same service again.
+def split_white_list(entries):
+    exact, zones = set(), set()
+    for entry in entries:
+        if entry.startswith("*."):
+            entry = entry[1:]
+        if entry.startswith("."):
+            zones.add(entry.lstrip("."))
+        else:
+            exact.add(entry)
+    return exact, zones
+
+
+white_exact, white_zones = split_white_list(white_list)
+
+
+def is_white_listed(domain):
+    if domain in white_exact:
+        return True
+    parts = domain.split(".")
+    return any(".".join(parts[i:]) in white_zones for i in range(len(parts)))
+
+
 # Async function to download file
 async def download_file(session, url):
     """Download one source. Returns (url, lines, error) - error is None on success."""
@@ -208,7 +234,7 @@ async def main():
     telegram_message.append(f"🗑 Removed {len(filtered_lines) - len(unique_lines)} duplicate lines.")
 
     # Remove domains from white list
-    final_lines = [line for line in unique_lines if line.split()[1] not in white_list]
+    final_lines = [line for line in unique_lines if not is_white_listed(line.split()[1])]
     found_in_white_list = len(unique_lines) - len(final_lines)
 
     if found_in_white_list:

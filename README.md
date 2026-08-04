@@ -81,6 +81,9 @@ Run the script with:
 
 ### 2. **Whitelist/Blacklist Handling**
 - **Whitelist:** Domains listed in the whitelist are removed from the final list.
+  An entry written as `example.com` matches that exact name; an entry written as
+  `.example.com` (or `*.example.com`) matches the domain and every subdomain, which is
+  what you want when a source blocks a whole backend zone.
 - **Blacklist:** Missing domains from the blacklist are added to the final list.
 
 ### 3. **Logging and Notifications**

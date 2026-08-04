@@ -1,1 +1,8 @@
-0.0.0.0
+# Domains that must never be blocked.
+# "example.com"  - exact name only
+# ".example.com" - the domain and every subdomain
+
+# THE FINALS / Embark Studios. 1Hosts Xtra blocks the whole backend, which kills
+# login (auth.embark.net) and the in-game pub/sub (client2pubsub.*.es-dis.net).
+.embark.net
+.es-dis.net
