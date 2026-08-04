@@ -6,3 +6,7 @@
 # login (auth.embark.net) and the in-game pub/sub (client2pubsub.*.es-dis.net).
 .embark.net
 .es-dis.net
+
+# Viber's main API. The A/B-test hosts (abtest.api.viber.com, abff.viber.com) stay
+# blocked - only this one is needed for the client to work.
+core.viber.com
