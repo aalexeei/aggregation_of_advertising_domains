@@ -5,7 +5,7 @@
         "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling/hosts",
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt",
-        "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Xtra/hosts.txt",
+        "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/hosts.txt",
         "https://cdn.jsdelivr.net/gh/ukrainianfilters/lists@main/combined/combined.txt"
     ],
     "white_list_file": "white_list.txt",
