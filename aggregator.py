@@ -222,7 +222,7 @@ async def main():
             logging.error("Aborting: refusing to overwrite the list from incomplete sources.")
             telegram_message.append("🛑 Aborted, list left unchanged.")
             send_telegram_notification("\n".join(telegram_message))
-            return
+            return False
     else:
         telegram_message.append(f"✅ All {len(results)} sources downloaded.")
 
@@ -280,7 +280,7 @@ async def main():
                 f"🛑 Aborted: list shrank by {shrink_percent}% "
                 f"({len(existing_lines)} → {len(final_lines)} lines). File left unchanged.")
             send_telegram_notification("\n".join(telegram_message))
-            return
+            return False
 
         new_hash = calculate_hash(final_lines)
         if existing_hash == new_hash:
@@ -308,4 +308,6 @@ async def main():
 # Cleanup and run main
 if __name__ == "__main__":
     cleanup_old_logs()
-    asyncio.run(main())
+    # An aborted run exits non-zero so a scheduler can tell it apart from "no changes"
+    if asyncio.run(main()) is False:
+        raise SystemExit(1)
