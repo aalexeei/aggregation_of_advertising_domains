@@ -34,6 +34,8 @@ ABORT_ON_SOURCE_FAILURE = config.get("abort_on_source_failure", True)
 MAX_SHRINK_PERCENT = config.get("max_shrink_percent", 20)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# A local Bot API server (e.g. http://127.0.0.1:8081) for a bot that has left the cloud one
+TELEGRAM_API_BASE = (os.getenv("TELEGRAM_API_BASE") or "https://api.telegram.org").rstrip("/")
 
 # Set up logging
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -43,13 +45,17 @@ logging.basicConfig(filename=log_filename, level=logging.INFO, format="%(asctime
 
 # Function to send Telegram notifications
 def send_telegram_notification(message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    url = f"{TELEGRAM_API_BASE}/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
-        requests.post(url, data=data)
-        logging.info("Telegram notification sent.")
+        response = requests.post(url, data=data, timeout=30)
     except requests.RequestException as e:
         logging.error(f"Failed to send Telegram notification: {e}")
+        return
+    if response.ok:
+        logging.info("Telegram notification sent.")
+    else:
+        logging.error(f"Telegram refused the notification: {response.status_code} {response.text[:200]}")
 
 
 # Function to clean up old logs

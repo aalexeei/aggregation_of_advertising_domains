@@ -34,6 +34,8 @@
   ```bash 
   TELEGRAM_BOT_TOKEN=your_telegram_bot_token
   TELEGRAM_CHAT_ID=your_telegram_chat_id
+  # optional: a local Bot API server, for a bot that has left api.telegram.org
+  TELEGRAM_API_BASE=http://127.0.0.1:8081
   ```
 - **Configure the script using config.json:**
 
